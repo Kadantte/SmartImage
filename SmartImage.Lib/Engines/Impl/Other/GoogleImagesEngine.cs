@@ -1,14 +1,17 @@
+using SmartImage.Lib.Engines.Model;
+
 namespace SmartImage.Lib.Engines.Impl.Other
 {
-	public sealed class GoogleImagesEngine : SearchEngine
+	public sealed class GoogleImagesEngine : BaseSearchEngine
 	{
 		public GoogleImagesEngine() : base("http://images.google.com/searchbyimage?image_url=") { }
 
 		public override string Name => "Google Images";
 
-		public override SearchEngineOptions Engine => SearchEngineOptions.GoogleImages;
+		public override SearchEngineOptions EngineOption => SearchEngineOptions.GoogleImages;
 
-		
+		public override EngineSearchType SearchType => EngineSearchType.Image;
+
 
 
 		// https://html-agility-pack.net/knowledge-base/2113924/how-can-i-use-html-agility-pack-to-retrieve-all-the-images-from-a-website-

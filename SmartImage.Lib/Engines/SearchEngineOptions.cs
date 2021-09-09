@@ -2,6 +2,8 @@
 using SmartImage.Lib.Engines.Impl;
 using SmartImage.Lib.Engines.Impl.Other;
 
+// ReSharper disable UnusedMember.Global
+
 namespace SmartImage.Lib.Engines
 {
 	/// <summary>
@@ -49,18 +51,7 @@ namespace SmartImage.Lib.Engines
 		Iqdb = 1 << 5,
 
 		/// <summary>
-		///     <list type="bullet">
-		///         <item>
-		///             <description>
-		///                 <see cref="Engines.Impl.TraceMoe" />
-		///             </description>
-		///         </item>
-		///         <item>
-		///             <description>
-		///                 <see cref="Engines.Impl.TraceMoe.TraceMoeEngine" />
-		///             </description>
-		///         </item>
-		///     </list>
+		///     <see cref="TraceMoeEngine" />
 		/// </summary>
 		TraceMoe = 1 << 6,
 
@@ -96,6 +87,9 @@ namespace SmartImage.Lib.Engines
 		///     All engines
 		/// </summary>
 		All = SauceNao | ImgOps | GoogleImages | TinEye | Iqdb | TraceMoe | KarmaDecay | Yandex | Bing | Tidder |
-		      Ascii2D
+		      Ascii2D,
+
+
+		Artwork = SauceNao | Iqdb | Ascii2D,
 	}
 }

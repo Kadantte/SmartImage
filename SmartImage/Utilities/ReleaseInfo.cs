@@ -1,15 +1,25 @@
+﻿using System;
+using System.Globalization;
 using Newtonsoft.Json.Linq;
 using RestSharp;
-using System;
-using System.Globalization;
+using Kantan.Diagnostics;
+
+// ReSharper disable PossibleNullReferenceException
 
 namespace SmartImage.Utilities
 {
 	public readonly struct ReleaseInfo
 	{
+		private const string GITHUB_API_ENDPOINT = "https://api.github.com/";
+
+		private const string GITHUB_API_SMARTIMAGE = "repos/Decimation/SmartImage/releases";
+
 		public ReleaseInfo(string tagName, string htmlUrl, string publishedAt, string asset)
 		{
+			// TODO: fails if tag contains non-numeric values!
+
 			TagName = tagName;
+
 			HtmlUrl = htmlUrl;
 
 
@@ -20,24 +30,22 @@ namespace SmartImage.Utilities
 
 			// Parse version
 
-			var versionStrSplit = tagName
-				.Replace("v", String.Empty)
-				.Split(".");
+			string[] versionStrSplit = tagName
+			                           .Replace("v", String.Empty)
+			                           .Split(".");
 
 
-			int major = 0, minor = 0, build = 0, rev = 0;
+			int major = Int32.Parse(versionStrSplit[0]);
+			int minor = Int32.Parse(versionStrSplit[1]);
 
-			major = int.Parse(versionStrSplit[0]);
-			minor = int.Parse(versionStrSplit[1]);
+			int build = 0, rev = 0;
 
-			if (versionStrSplit.Length >= 3)
-			{
-				build = int.Parse(versionStrSplit[2]);
+			if (versionStrSplit.Length >= 3) {
+				build = Int32.Parse(versionStrSplit[2]);
 			}
 
-			if (versionStrSplit.Length >= 4)
-			{
-				rev = int.Parse(versionStrSplit[3]);
+			if (versionStrSplit.Length >= 4) {
+				rev = Int32.Parse(versionStrSplit[3]);
 			}
 
 
@@ -58,24 +66,22 @@ namespace SmartImage.Utilities
 
 		public static ReleaseInfo GetLatestRelease()
 		{
-			// todo
-			var rc = new RestClient("https://api.github.com/");
-			var re = new RestRequest("repos/Decimation/SmartImage/releases");
+			var rc = new RestClient(GITHUB_API_ENDPOINT);
+			var re = new RestRequest(GITHUB_API_SMARTIMAGE);
 			var rs = rc.Execute(re);
 			var ja = JArray.Parse(rs.Content);
 
 			var first = ja[0];
 
 			var tagName = first["tag_name"];
-			var url = first["html_url"];
+			var url     = first["html_url"];
 			var publish = first["published_at"];
 
 
 			var assets = first["assets"];
-			var dlurl = assets[0]["browser_download_url"];
+			var dlUrl  = assets[0]["browser_download_url"];
 
-			var r = new ReleaseInfo(tagName.ToString(), url.ToString(), publish.ToString(), dlurl.ToString());
-
+			var r = new ReleaseInfo(tagName.ToString(), url.ToString(), publish.ToString(), dlUrl.ToString());
 
 			return r;
 		}

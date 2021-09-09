@@ -1,12 +1,15 @@
+using SmartImage.Lib.Engines.Model;
+
 namespace SmartImage.Lib.Engines.Impl.Other
 {
-	public sealed class TinEyeEngine : SearchEngine
+	public sealed class TinEyeEngine : BaseSearchEngine
 	{
 		public TinEyeEngine() : base("https://www.tineye.com/search?url=") { }
 		
 
-		public override SearchEngineOptions Engine => SearchEngineOptions.TinEye;
+		public override SearchEngineOptions EngineOption => SearchEngineOptions.TinEye;
 
+		public override EngineSearchType SearchType => EngineSearchType.Image;
 
 		/*
 		 * https://github.com/Jabeyjabes/TinEye-API/blob/master/TinEye_API

@@ -1,9 +1,18 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net5.0</TargetFramework>
+    <Configurations>Debug;Release;TestDebug</Configurations>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='TestDebug|AnyCPU'">
+    <DefineConstants>DEBUG;TRACE;JETBRAINS_ANNOTATIONS;TEST_DEBUG</DefineConstants>
+    <NoWarn>CA1416</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+    <PackageReference Include="OpenCvSharp4.Windows" Version="4.5.3.20210817" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\SmartImage.Lib\SmartImage.Lib.csproj" />
@@ -12,9 +21,6 @@
   <ItemGroup>
     <Reference Include="Novus">
       <HintPath>..\..\..\VSProjects\Novus\Novus\bin\Release\net5.0\Novus.dll</HintPath>
-    </Reference>
-    <Reference Include="SimpleCore">
-      <HintPath>..\..\SimpleCore\SimpleCore\bin\Release\net5.0\SimpleCore.dll</HintPath>
     </Reference>
   </ItemGroup>
 

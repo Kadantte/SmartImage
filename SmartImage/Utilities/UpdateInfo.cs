@@ -1,12 +1,21 @@
-using Novus.Win32;
-using SimpleCore.Cli;
-using SmartImage.Core;
-using System;
+﻿using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Net;
+using JetBrains.Annotations;
+using Kantan.Cli;
+using Novus.Win32;
+using SmartImage.Core;
 
 namespace SmartImage.Utilities
 {
+	public enum VersionStatus
+	{
+		UpToDate,
+		Available,
+		Preview,
+	}
+
 	public readonly struct UpdateInfo
 	{
 		public Version Current { get; }
@@ -18,36 +27,42 @@ namespace SmartImage.Utilities
 		private UpdateInfo(Version current, ReleaseInfo info, VersionStatus status)
 		{
 			Current = current;
-			Latest = info;
-			Status = status;
+			Latest  = info;
+			Status  = status;
 		}
 
+		[DoesNotReturn]
+		[ContractAnnotation("=> stop")]
 		public static void Update(UpdateInfo ui)
 		{
-			const string NEW_EXE = "SmartImage-new.exe";
+			const string NEW_EXE    = "SmartImage-new.exe";
 			const string UPDATE_BAT = "SmartImage_Updater.bat";
 
 
-			var destNew = Path.Combine(Info.AppFolder, NEW_EXE);
-			var wc = new WebClient();
+			var destNew = Path.Combine(AppInfo.AppFolder, NEW_EXE);
 
-			NConsole.WriteInfo("Downloading...");
+			using var wc = new WebClient();
+
+
+			Console.WriteLine("Downloading...");
+			Console.WriteLine("Program will reopen automatically after update!");
 
 			wc.DownloadFile(ui.Latest.AssetUrl, destNew);
 
 
-			string exeFileName = Info.ExeLocation;
+			string exeFileName = AppInfo.ExeLocation;
 
 			//const string WAIT_4_SEC = "ping 127.0.0.1 > nul";
 
-			const string WAIT_4_SEC = "timeout /t 4 /nobreak >nul";
+			const string WAIT_2_SEC = "timeout /t 2 /nobreak >nul";
+			const string WAIT_1_SEC = "timeout /t 1 /nobreak >nul";
 
 			string[] commands =
 			{
 				"@echo off",
 
-				/* Wait approximately 4 seconds (so that the process is already terminated) */
-				WAIT_4_SEC,
+				/* Wait approximately 2 seconds (so that the process is already terminated) */
+				WAIT_2_SEC,
 
 				/* Delete executable */
 				"echo y | del /F " + exeFileName,
@@ -56,11 +71,10 @@ namespace SmartImage.Utilities
 				$"move /Y \"{destNew}\" \"{exeFileName}\" > NUL",
 
 				/* Wait */
-				WAIT_4_SEC,
-				WAIT_4_SEC,
+				WAIT_1_SEC,
 
 				/* Open the new SmartImage version */
-				$"start /d \"{Info.AppFolder}\" {Info.NAME_EXE}",
+				$"start /d \"{AppInfo.AppFolder}\" {AppInfo.NAME_EXE}",
 
 				/* Delete this batch file */
 				"echo y | del " + UPDATE_BAT,
@@ -68,43 +82,17 @@ namespace SmartImage.Utilities
 
 
 			// Runs in background
-			Command.RunBatch(commands, false, UPDATE_BAT);
+			var proc = Command.Batch(commands, UPDATE_BAT);
+
+			proc.Start();
+			Environment.Exit(0);
 		}
 
-
-		// NOTE: Does not return if a new update is found and the user updates
-		public static void AutoUpdate()
-		{
-			var ui = GetUpdateInfo();
-
-			if (ui.Status == VersionStatus.Available)
-			{
-				NConsole.WriteSuccess($"Update found: {ui.Latest} ");
-
-				if (NConsole.ReadConfirmation("Update?"))
-				{
-					try
-					{
-						Update(ui);
-					}
-					catch (Exception e)
-					{
-						Console.WriteLine(e);
-						return;
-					}
-
-					Environment.Exit(0);
-				}
-			}
-
-			NConsole.WriteInfo($"Up to date: {ui.Current} [{ui.Latest}]");
-			NConsole.WaitForSecond();
-		}
 
 		public static UpdateInfo GetUpdateInfo()
 		{
-			var asm = typeof(Info).Assembly.GetName();
-			var currentVersion = asm.Version;
+			var currentVersion = AppInfo.Version;
+
 			var release = ReleaseInfo.GetLatestRelease();
 
 			int cmp = currentVersion.CompareTo(release.Version);
@@ -118,12 +106,5 @@ namespace SmartImage.Utilities
 
 			return new UpdateInfo(currentVersion, release, status);
 		}
-	}
-
-	public enum VersionStatus
-	{
-		UpToDate,
-		Available,
-		Preview,
 	}
 }

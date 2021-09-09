@@ -1,182 +1,375 @@
-﻿// ReSharper disable RedundantUsingDirective
-
-#pragma warning disable HAA0601,
-
-using SimpleCore.Cli;
-using SmartImage.Configuration;
-using SmartImage.Core;
-using SmartImage.Searching;
-using System;
-using System.Diagnostics;
-using System.Linq;
-using SimpleCore.Net;
-using SmartImage.Utilities;
-using static SimpleCore.Cli.NConsoleOption;
-
+﻿// ReSharper disable SuggestVarOrType_BuiltInTypes
+// ReSharper disable AssignNullToNotNullAttribute
+// ReSharper disable ConvertSwitchStatementToSwitchExpression
 // ReSharper disable UnusedParameter.Local
-#pragma warning disable CA1416
+// ReSharper disable RedundantUsingDirective
+
+#pragma warning disable IDE0079
+#pragma warning disable CS0168
+#pragma warning disable IDE0060
+#pragma warning disable CA1825
+#nullable disable
+
+using SmartImage.Core;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Drawing;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Media;
+using System.Net.NetworkInformation;
+using System.Resources;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.Unicode;
+using System.Threading;
+using System.Threading.Tasks;
+using Windows.ApplicationModel.Background;
+using Windows.Networking.Connectivity;
+using Windows.UI.Notifications;
+using Kantan.Cli;
+using Kantan.Cli.Controls;
+using Kantan.Diagnostics;
+using Kantan.Net;
+using Kantan.Text;
+using Kantan.Utilities;
+using Microsoft.Toolkit.Uwp.Notifications;
+using Novus.Win32;
+using Novus.Win32.Structures;
+using SmartImage.Lib;
+using SmartImage.Lib.Engines;
+using SmartImage.Lib.Searching;
+using SmartImage.Lib.Utilities;
+using SmartImage.UI;
+using SmartImage.Utilities;
+
+// ReSharper disable AsyncVoidLambda
+
+// ReSharper disable ConditionIsAlwaysTrueOrFalse
+
+// ReSharper disable ArrangeObjectCreationWhenTypeNotEvident
+
+// ReSharper disable CognitiveComplexity
 
 namespace SmartImage
 {
+	//  ____                       _   ___
+	// / ___| _ __ ___   __ _ _ __| |_|_ _|_ __ ___   __ _  __ _  ___
+	// \___ \| '_ ` _ \ / _` | '__| __|| || '_ ` _ \ / _` |/ _` |/ _ \
+	//  ___) | | | | | | (_| | |  | |_ | || | | | | | (_| | (_| |  __/
+	// |____/|_| |_| |_|\__,_|_|   \__|___|_| |_| |_|\__,_|\__, |\___|
+	//                                                     |___/
+
 	public static class Program
 	{
-		//  ____                       _   ___
-		// / ___| _ __ ___   __ _ _ __| |_|_ _|_ __ ___   __ _  __ _  ___
-		// \___ \| '_ ` _ \ / _` | '__| __|| || '_ ` _ \ / _` |/ _` |/ _ \
-		//  ___) | | | | | | (_| | |  | |_ | || | | | | | (_| | (_| |  __/
-		// |____/|_| |_| |_|\__,_|_|   \__|___|_| |_| |_|\__,_|\__, |\___|
-		//                                                     |___/
+		#region Core fields
 
-		/*
-		 * todo: reorganize, restructure, refactor, etc.
-		 */
+		/// <summary>
+		/// User search config
+		/// </summary>
+		internal static readonly SearchConfig Config = new();
 
+		/// <summary>
+		/// Search client
+		/// </summary>
+		internal static readonly SearchClient Client = new(Config);
 
-		/*
-		 * Entry point
-		 */
-		private static readonly string InterfacePrompt =
-			$"Enter the option number to open or {NConsole.NC_GLOBAL_EXIT_KEY} to exit.\n" +
-			$"Hold down {NConsole.NC_ALT_FUNC_MODIFIER} to show more info.\n"              +
-			$"Hold down {NConsole.NC_CTRL_FUNC_MODIFIER} to download.\n"                   +
-			$"Hold down {NConsole.NC_COMBO_FUNC_MODIFIER} to open raw result.\n"           +
-			$"{NConsole.NC_GLOBAL_RETURN_KEY}: Refine\n"                                   +
-			$"{NConsole.NC_GLOBAL_REFRESH_KEY}: Refresh";
-
-		private static void Main(string[] args)
+		/// <summary>
+		/// Console UI for search results
+		/// </summary>
+		private static readonly ConsoleDialog ResultDialog = new()
 		{
+			Options = new List<ConsoleOption>(),
 
+			Description = "Press the result number to open in browser\n" +
+			              "Ctrl: Load direct | Alt: Show other | Shift: Open raw | Alt+Ctrl: Download\n" +
+			              "F1: Show filtered results | F2: Refine | F5: Refresh",
 
+			Functions = new()
+			{
+				[ConsoleKey.F1] = () =>
+				{
+					// F1 : Show filtered
+
+					ResultDialog.Options.Clear();
+
+					var buffer = new List<SearchResult>();
+					buffer.AddRange(Client.Results);
+
+					if (!_isFilteredShown) {
+						buffer.AddRange(Client.FilteredResults);
+					}
+
+					ResultDialog.Options.Add(_orig);
+
+					foreach (ConsoleOption option in buffer.Select(NConsoleFactory.CreateResultOption)) {
+						ResultDialog.Options.Add(option);
+					}
+
+					_isFilteredShown = !_isFilteredShown;
+
+					ConsoleManager.Refresh();
+				},
+				[ConsoleKey.F2] = async () =>
+				{
+					// F2 : Refine
+
+					_cancellationToken = new();
+					ResultDialog.Options.Clear();
+					ResultDialog.Options.Add(_orig);
+
+					try {
+						await Client.RefineSearchAsync();
+					}
+					catch (Exception e) {
+						Console.WriteLine("Error: {0}", e.Message);
+						ConsoleManager.WaitForSecond();
+					}
+
+					ConsoleManager.Refresh();
+				},
+			}
+		};
+
+		#endregion
+
+		/// <summary>
+		/// Entry point
+		/// </summary>
+		private static async Task Main(string[] args)
+		{
 			/*
 			 * Setup
 			 * Check compatibility
-			 */
-			Info.Setup();
-
-
-			/*
-			 * Set up console
+			 * Register events
 			 */
 
-			Console.Title = Info.NAME;
+			ToastNotificationManagerCompat.OnActivated += AppInterface.OnToastActivated;
 
-			NConsole.AutoResizeHeight = false;
-			NConsole.Resize(Interface.MainWindowWidth, Interface.MainWindowHeight);
+			Console.OutputEncoding = Encoding.Unicode;
+			
+			Console.Title = $"{AppInfo.NAME}";
+
+			//120,30
+			//Console.WindowHeight = 60;
+
+			ConsoleManager.Init();
+			Console.Clear();
 
 			Console.CancelKeyPress += (sender, eventArgs) => { };
 
-			Console.Clear();
-
-			Console.WriteLine(Info.NAME_BANNER);
-			NConsole.WriteInfo("Setting up...");
-
+			var process = Process.GetCurrentProcess();
+			process.PriorityClass = ProcessPriorityClass.AboveNormal;
 
 			/*
-			 * Set up NConsole
+			 * Start
 			 */
-			NConsole.Init();
-			NConsoleInterface.DefaultName = Info.NAME_BANNER;
 
 			/*
-			 * Check for any legacy integrations that need to be migrated
-			 */
-			bool cleanupOk = LegacyIntegration.LegacyCleanup();
-
-			if (!cleanupOk) {
-				NConsole.WriteError("Could not migrate legacy features");
-			}
-
-			/*
-			 * Run search
+			 * Configuration precedence
+			 *
+			 * 1. Config file
+			 * 2. Cli arguments
+			 *
+			 * Cli arguments override config file
 			 */
 
-			try {
+			AppConfig.ReadConfigFile();
 
+			if (!await HandleArguments())
+				return;
 
-				// Setup
-				SearchConfig.Config.EnsureConfig();
-				Integration.Setup();
+			ResultDialog.Subtitle = $"SE: {Config.SearchEngines} " +
+			                        $"| PE: {Config.PriorityEngines} " +
+			                        $"| Filtering: {AppInterface.Elements.ToToggleString(Config.Filtering)}";
 
-				// Run UI if not using command line arguments
-				if (SearchConfig.Config.NoArguments) {
-					Interface.Run();
-					Console.Clear();
+			_cancellationToken = new();
+
+			// Run search
+
+			Client.ResultCompleted += OnResultCompleted;
+
+			Client.SearchCompleted += (obj, eventArgs) =>
+			{
+				OnSearchCompleted(obj, eventArgs, _cancellationToken);
+
+				if (Config.Notification) {
+					AppInterface.ShowToast(obj, eventArgs);
 				}
+			};
 
-				// Image is automatically read from command line arguments,
-				// or it is input through the main menu
+			ConsoleProgressIndicator.Queue(_cancellationToken);
 
+			// Show results
+			var searchTask = Client.RunSearchAsync();
 
-				// Exit if no image is given
-				if (!SearchConfig.Config.HasImageInput) {
-					return;
-				}
+			_orig = NConsoleFactory.CreateResultOption(Config.Query.GetImageResult(), "(Original image)",
+			                                           AppInterface.Elements.ColorMain, -0.1f);
 
-				SEARCH:
+			// Add original image
+			ResultDialog.Options.Add(_orig);
 
-				// Run search
+			await ResultDialog.ReadAsync();
 
-				var client = new SearchClient(SearchConfig.Config);
-				client.Start();
-
-				// Show results
-				var i = new NConsoleInterface(client.Results)
-				{
-					SelectMultiple = false,
-					Prompt         = InterfacePrompt
-				};
-
-				var v = i.Run();
-
-				//todo
-				// refine search
-				if (v.Any() && (bool) v.First()) {
-					Debug.WriteLine($"Re-search");
-
-					var yandex = client.Results.Find(r => r.Name == "Yandex");
-
-					var configImageInput = MediaTypes.IsDirect(yandex.Url, MimeType.Image)
-						? yandex.Url
-						: yandex.ExtendedResults.First(e => MediaTypes.IsDirect(e.Url, MimeType.Image))?.Url;
-
-					//var configImageInput = SearchClient.Client.Results.FirstOrDefault(r=>MediaTypes.IsDirect(r.Url))?.Url;
-
-					Debug.WriteLine($">>>> {configImageInput}");
-					Console.Clear();
-					SearchConfig.Config.ImageInput = configImageInput;
-
-
-					goto SEARCH;
-				}
-			}
-			catch (Exception exception) {
-#if !DEBUG
-				var cr = new CrashReport(exception);
-
-				Console.WriteLine(cr);
-
-
-				var src = cr.WriteToFile();
-				Console.WriteLine(exception.InnerException?.StackTrace);
-				Console.WriteLine(exception.InnerException?.Message);
-				Console.WriteLine("Crash log written to {0}", src);
-
-				Console.WriteLine("Please file an issue and attach the crash log.");
-
-				//Network.OpenUrl(Info.Issue);
-
-				NConsole.WaitForInput();
-#else
-				Console.WriteLine(exception);
-#endif
-			}
-			finally {
-				// Exit
-
-				if (SearchConfig.Config.UpdateConfig) {
-					SearchConfig.Config.SaveFile();
-				}
-			}
+			await searchTask;
 		}
+
+		private static async Task<bool> HandleArguments()
+		{
+			var args = Environment.GetCommandLineArgs();
+
+			// first element is executing assembly
+			args = args.Skip(1).ToArray();
+
+			if (!args.Any()) {
+				var options = await AppInterface.MainMenuDialog.ReadAsync();
+
+				var file = options.DragAndDrop;
+
+				if (file != null) {
+					Debug.WriteLine($"Drag and drop: {file}");
+					Console.WriteLine($">> {file}".AddColor(AppInterface.Elements.ColorMain));
+					Config.Query = file;
+					return true;
+				}
+
+				if (!options.Output.Any()) {
+					return false;
+				}
+			}
+			else {
+
+				/*
+				 * Handle CLI args
+				 */
+
+				//-pe SauceNao,Iqdb -se All -f "C:\Users\Deci\Pictures\Test Images\Test6.jpg"
+
+				try {
+
+					CliHandler.Run(args);
+
+					Client.Reload();
+				}
+				catch (Exception e) {
+					Console.WriteLine($"Error: {e.Message}");
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		private static CancellationTokenSource _cancellationToken;
+
+		private static bool _isFilteredShown;
+
+		private static ConsoleOption _orig;
+
+		#region Event handlers
+
+		private static void OnSearchCompleted(object sender, SearchCompletedEventArgs eventArgs,
+		                                      CancellationTokenSource cts)
+		{
+
+			Native.FlashConsoleWindow();
+
+			cts.Cancel();
+			cts.Dispose();
+
+			SystemSounds.Exclamation.Play();
+			ConsoleManager.Refresh();
+
+			if (Config.PriorityEngines == SearchEngineOptions.Auto) {
+				var m = Client.Results.OrderByDescending(x => x.PrimaryResult.Similarity);
+
+				WebUtilities.OpenUrl(m.First().PrimaryResult.Url.ToString());
+			}
+			//ResultDialog.Status += $" | {Client.ShouldRefine}";
+
+		}
+
+		private static void OnResultCompleted(object sender, ResultCompletedEventArgs eventArgs)
+		{
+			var result = eventArgs.Result;
+
+			var option = NConsoleFactory.CreateResultOption(result);
+
+			bool? isFiltered = eventArgs.IsFiltered;
+
+			if (isFiltered.HasValue && !isFiltered.Value || !isFiltered.HasValue) {
+				ResultDialog.Options.Add(option);
+			}
+
+			if (eventArgs.IsPriority) {
+				option.Function();
+			}
+
+			var s = $"Results: {Client.Results.Count}";
+
+			if (Config.Filtering) {
+				s += $" | Filtered: {Client.FilteredResults.Count}";
+			}
+
+			s += $" | Pending: {Client.Pending}";
+
+			ResultDialog.Status = s;
+
+		}
+
+		#endregion
+
+		/// <summary>
+		/// Command line argument handler
+		/// </summary>
+		private static readonly CliHandler CliHandler = new()
+		{
+			Parameters =
+			{
+				new()
+				{
+					ArgumentCount = 1,
+					ParameterId   = "-se",
+					Function = strings =>
+					{
+						Config.SearchEngines = Enum.Parse<SearchEngineOptions>(strings[0]);
+						return null;
+					}
+				},
+				new()
+				{
+					ArgumentCount = 1,
+					ParameterId   = "-pe",
+					Function = strings =>
+					{
+						Config.PriorityEngines = Enum.Parse<SearchEngineOptions>(strings[0]);
+						return null;
+					}
+				},
+				new()
+				{
+					ArgumentCount = 0,
+					ParameterId   = "-f",
+					Function = strings =>
+					{
+						Config.Filtering = true;
+						return null;
+					}
+				}
+			},
+			Default = new CliParameter
+			{
+				ArgumentCount = 1,
+				ParameterId   = null,
+				Function = strings =>
+				{
+					Config.Query = strings[0];
+					return null;
+				}
+			}
+		};
 	}
 }

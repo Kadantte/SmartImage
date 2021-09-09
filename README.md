@@ -2,18 +2,21 @@
 <br />
 <p align="center">
   <a href="https://github.com/Decimation/SmartImage">
-    <img src="SmartImage/Icon.png" alt="Logo" width="80" height="80">
+    <img src="/Assets/Icon.png" alt="Logo" width="80" height="80">
   </a>
 
   <h1 align="center">SmartImage</h1>
   
   <p align="center">
     <a href="https://GitHub.com/Decimation/SmartImage/releases/" alt="Releases">
-        <img src="https://img.shields.io/github/release/Decimation/SmartImage.svg" /></a>
+        <img src="https://img.shields.io/github/v/release/decimation/smartimage?color=red&style=flat-square" /></a>
     
   <a href="https://GitHub.com/Decimation/SmartImage/releases/" alt="Total Downloads">
-        <img src="https://img.shields.io/github/downloads/Decimation/SmartImage/total.svg" /></a>
-    
+        <img src="https://img.shields.io/github/downloads/Decimation/SmartImage/total?style=flat-square" /></a>
+        
+  <a href="https://GitHub.com/Decimation/SmartImage/releases/" alt="Total Downloads">
+      <img src="https://img.shields.io/github/stars/Decimation/SmartImage?style=flat-square" /></a>
+      
 </p>
 
   <p align="center">
@@ -32,12 +35,12 @@
 
 <p align="center">
   
-  <img src="https://github.com/Decimation/SmartImage/raw/master/Demo.gif" width="640" height="360">
+  <img src="https://github.com/Decimation/SmartImage/raw/master/Examples/Demo-new.gif" width="640" height="360">
   
   <p align="center"><b>SmartImage</b> is a powerful reverse image search tool for Windows. <b>SmartImage</b> will open the best match found returned from various image search engines (see the supported sites) right in your web browser. This behavior can be configured to the user's preferences.</p>
   
   <p align="center">
-  <img src="https://github.com/Decimation/SmartImage/blob/master/Context%20menu%20integration.png" width="435" height="367">
+  <img src="https://github.com/Decimation/SmartImage/blob/master/Examples/Context%20menu%20integration.png" width="435" height="367">
   <p align="center"><b>SmartImage</b> features context menu integration, which allows you to right click on an image to immediately run a search!</p>
   </p>
   
@@ -74,9 +77,3 @@ Wiki pages useful for getting started:
 **See the [Wiki »](https://github.com/Decimation/SmartImage/wiki) for documentation.**
 
 <!-- ... -->
-
-## Donation
-
-If you would like to support this project, you can buy me a cup of coffee! :)
-
-[![Donate](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://paypal.me/decimation001?locale.x=en_US)

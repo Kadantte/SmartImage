@@ -1,27 +1,42 @@
 ﻿// ReSharper disable UnusedMember.Global
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
-using HtmlAgilityPack;
-using SimpleCore.Net;
-using SimpleCore.Utilities;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
+using AngleSharp.Dom;
+using AngleSharp.Html.Dom;
+using AngleSharp.Html.Parser;
+using AngleSharp.XPath;
+using RestSharp;
+using Kantan.Diagnostics;
+using Kantan.Net;
+using Kantan.Text;
+using Kantan.Utilities;
+using SmartImage.Lib.Engines.Model;
 using SmartImage.Lib.Searching;
+using SmartImage.Lib.Utilities;
+
+// ReSharper disable StringLiteralTypo
 
 namespace SmartImage.Lib.Engines.Impl
 {
-	public class IqdbEngine : SearchEngine
+	public sealed class IqdbEngine : ClientSearchEngine
 	{
-		public IqdbEngine() : base("https://iqdb.org/?url=") { }
+		public IqdbEngine() : base("https://iqdb.org/?url=", "https://iqdb.org/") { }
 
-		public override SearchEngineOptions Engine => SearchEngineOptions.Iqdb;
+		public override SearchEngineOptions EngineOption => SearchEngineOptions.Iqdb;
 
 		public override string Name => "IQDB";
 
-		//public static float? FilterThreshold => 70.00F;
+		public override TimeSpan           Timeout      => TimeSpan.FromSeconds(4.5);
+		public override EngineSearchType SearchType => EngineSearchType.Image | EngineSearchType.Metadata;
 
-
-		private static ImageResult ParseResult(HtmlNodeCollection tr)
+		private static ImageResult ParseResult(IHtmlCollection<IElement> tr)
 		{
 			var caption = tr[0];
 			var img     = tr[1];
@@ -29,114 +44,154 @@ namespace SmartImage.Lib.Engines.Impl
 
 			string url = null!;
 
-			var urlNode = img.FirstChild.FirstChild;
+			//img.ChildNodes[0].ChildNodes[0].TryGetAttribute("href")
 
-			if (urlNode.Name != "img") {
-				var origUrl = urlNode.Attributes["href"].Value;
+
+			try {
+				//url = src.FirstChild.ChildNodes[2].ChildNodes[0].TryGetAttribute("href");
+
+				url = img.ChildNodes[0].ChildNodes[0].TryGetAttribute("href");
 
 				// Links must begin with http:// in order to work with "start"
-				if (origUrl.StartsWith("//")) {
-					origUrl = "http:" + origUrl;
-				}
 
-
-				url = origUrl;
+			}
+			catch {
+				// ignored
 			}
 
 
 			int w = 0, h = 0;
 
-			if (tr.Count >= 4) {
+			if (tr.Length >= 4) {
 				var res = tr[3];
 
-				var wh = res.InnerText.Split(Formatting.MUL_SIGN);
+				string[] wh = res.TextContent.Split(Strings.Constants.MUL_SIGN);
 
-				var wStr = wh[0].SelectOnlyDigits();
+				string wStr = wh[0].SelectOnlyDigits();
 				w = Int32.Parse(wStr);
 
 				// May have NSFW caption, so remove it
 
-				var hStr = wh[1].SelectOnlyDigits();
+				string hStr = wh[1].SelectOnlyDigits();
 				h = Int32.Parse(hStr);
 			}
 
 			float? sim;
 
-			if (tr.Count >= 5) {
-				var simNode = tr[4];
-				var simStr  = simNode.InnerText.Split('%')[0];
+			if (tr.Length >= 5) {
+				var    simNode = tr[4];
+				string simStr  = simNode.TextContent.Split('%')[0];
 				sim = Single.Parse(simStr);
+				sim = MathF.Round(sim.Value, 2);
 			}
 			else {
 				sim = null;
 			}
 
+			Uri uri;
 
-			//var i = new BasicSearchResult(url, sim, w, h, src.InnerText, null, caption.InnerText);
-			var i = new ImageResult()
+			if (url != null) {
+				if (url.StartsWith("//")) {
+					url = "http:" + url;
+				}
+
+				uri = new Uri(url);
+			}
+			else {
+				uri = null;
+			}
+
+
+			var result = new ImageResult
 			{
-				Url         = url is null ? null : new Uri(url!),
+				Url         = uri,
 				Similarity  = sim,
 				Width       = w,
 				Height      = h,
-				Source      = src.InnerText,
-				Description = caption.InnerText,
+				Source      = src.TextContent,
+				Description = caption.TextContent,
 			};
-			//i.Filter = i.Similarity < FilterThreshold;
-			return i;
+
+
+			return result;
 		}
 
-		[DebuggerHidden]
-		public override SearchResult GetResult(ImageQuery url)
+
+		private IDocument GetDocument(ImageQuery query)
 		{
-			var sr = base.GetResult(url);
+			var rq = new RestRequest(Method.POST);
 
-			try {
+			const int MAX_FILE_SIZE = 8388608;
 
-				var html = Network.GetSimpleResponse(sr.RawUri.ToString()!);
+			rq.AddParameter("MAX_FILE_SIZE", MAX_FILE_SIZE, ParameterType.GetOrPost);
+			rq.AddHeader("Content-Type", "multipart/form-data");
 
-				Debug.WriteLine($"{Name} :: {html.IsSuccessful} {html.StatusCode}");
-				//Network.WriteResponse(html);
+			byte[] fileBytes = Array.Empty<byte>();
+			object uri       = String.Empty;
 
-				var doc = new HtmlDocument();
-				doc.LoadHtml(html.Content);
-
-
-				//var tables = doc.DocumentNode.SelectNodes("//table");
-
-				// Don't select other results
-
-				var pages  = doc.DocumentNode.SelectSingleNode("//div[@id='pages']");
-				var tables = pages.SelectNodes("div/table");
-
-				// No relevant results?
-				bool noMatch = pages.ChildNodes.Any(n => n.GetAttributeValue("class", null) == "nomatch");
-
-				if (noMatch) {
-					//sr.ExtendedInfo.Add("No relevant results");
-					// No relevant results
-					//sr.Filter = true;
-					return sr;
-				}
-
-				var images = tables.Select(table => table.SelectNodes("tr"))
-					.Select(ParseResult)
-					.Cast<ImageResult>()
-					.ToList();
-
-				// First is original image
-				images.RemoveAt(0);
-
-				var best = images[0];
-				sr.PrimaryResult.UpdateFrom(best);
-				sr.OtherResults.AddRange(images);
+			if (query.IsFile) {
+				fileBytes = File.ReadAllBytes(query.Value);
 			}
-			catch (Exception e) {
-				// ...
-				//sr.AddErrorMessage(e.Message);
-				Debug.WriteLine($"IQDB: {e.Message}");
-				sr.Status = ResultStatus.Failure;
+			else if (query.IsUri) {
+				uri = query.Value;
 			}
+			else {
+				throw new SmartImageException();
+			}
+
+			rq.AddFile("file", fileBytes, "image.jpg");
+			rq.AddParameter("url", uri, ParameterType.GetOrPost);
+			
+
+			var response = Client.Execute(rq);
+
+			var parser = new HtmlParser();
+			return parser.ParseDocument(response.Content);
+		}
+
+
+		protected override SearchResult Process(object obj, SearchResult sr)
+		{
+			// Don't select other results
+			var query = (ImageQuery) obj;
+			var now   = Stopwatch.GetTimestamp();
+			var doc   = GetDocument(query);
+			var diff  = TimeSpan.FromTicks(Stopwatch.GetTimestamp() - now);
+			sr.RetrievalTime = diff;
+
+			var pages  = doc.Body.SelectSingleNode("//div[@id='pages']");
+			var tables = ((IHtmlElement) pages).SelectNodes("div/table");
+
+			// No relevant results?
+
+			var ns = doc.Body?.QuerySelector("#pages > div.nomatch");
+
+			if (ns != null) {
+
+				sr.Status = ResultStatus.NoResults;
+
+				return sr;
+			}
+
+			var select = tables.Select(table => ((IHtmlElement) table)
+				                           .QuerySelectorAll("table > tbody > tr:nth-child(n)"));
+
+			var images = select.Select(ParseResult).ToList();
+
+
+			// First is original image
+			images.RemoveAt(0);
+
+			var best = images[0];
+			sr.PrimaryResult.UpdateFrom(best);
+			sr.OtherResults.AddRange(images);
+
+			sr.PrimaryResult.Quality = sr.PrimaryResult.Similarity switch
+			{
+				null  => ResultQuality.Indeterminate,
+				>= 75 => ResultQuality.High,
+				_     => ResultQuality.Low,
+			};
 
 			return sr;
 		}
